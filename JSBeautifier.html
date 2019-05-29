@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html><head>
+    <title>Obfuscated name remapper</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <style type="text/css">
+        body {
+            background: white;
+            color: black;
+            font-family: "Trebuchet MS",Helvetica,Tahoma,Arial,sans-serif;
+            font-size: 90.01%;
+            font-weight: normal;
+            line-height: 150%;
+            min-width: 680px;
+            padding: 0 3em;
+            text-align: left;
+        }
+        h1, h2, h3 {
+            line-height: 125%;
+            margin-bottom: 0.9em;
+        }
+        h1 {
+            font-size: 1.2em;
+        }
+        em {
+            white-space: nowrap;
+        }
+        .taContnr > label:after {
+            content:"\a";
+            white-space: pre;
+        }
+        textarea {
+            width: 80%;
+            height: 30vh;
+            white-space: pre;
+            word-wrap: normal;
+            overflow-x: scroll;
+        }
+        #errDisplay {
+            background: pink;
+            border: 3px solid darkred;
+            border-radius: 0.5ex;
+            margin: 0 1em;
+            padding: 0.5ex 1em;
+            display: none;
+        }
+        #errDisplay > pre {
+            white-space: pre-line;
+        }
+    </style>
+</head><body>
+
+<h1>This page assumes/requires array-mapped functions/code <b><em>after</em></b> it has been run
+    through <a href="http://jsbeautifier.org/">jsbeautifier.org</a> with the <em>Detect packers and obfuscators</em>
+    and the <em>Unescape printable chars</em> options set.
+</h1>
+<h2 id="errDisplay">Error message goes here</h2>
+<p class="taContnr">
+    <label for="inpTxt">Paste jsBeautified code here:</label>
+    <textarea id="inpTxt"></textarea>
+</p>
+<button id="remapBtn">Attempt Remap</button>
+<p class="taContnr">
+    <label for="rezTxt">Remapped code:</label>
+    <textarea id="rezTxt"></textarea>
+</p>
+
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.0/jquery.min.js"></script>
+<script type="text/javascript">
+$(document).ready (jQueryMain);
+
+function jQueryMain () {
+    $("#remapBtn").click ( function () {
+        $("#errDisplay").hide ();
+        var beautySrcRaw    = $("#inpTxt").val ().trim ();
+
+        //--- Attempt to ensure that the key array is all on one line:
+        var J = 0, LGI  = 0;
+        var btyExArry;
+        var beautySrc       = "";
+        var btyLineRegEx    = /(.+), *\n/g;
+
+        while (btyExArry    = btyLineRegEx.exec (beautySrcRaw) ) {
+            if (btyExArry.index != LGI)
+                break;
+
+            beautySrc      += btyExArry[1] + ', ';
+            console.log (++J, btyExArry[1]);
+            LGI             = btyLineRegEx.lastIndex;
+            console.log (++J, btyExArry.index, LGI);
+        }
+        beautySrc          += beautySrcRaw.slice (LGI);
+        console.log (beautySrc);
+
+        //--- Extract the key array.
+        var keyArryEgEx     = /^(?:var)?\s*([_$\w]+)\s*=\s*(\[.+?\]);?\s*$/gm;
+        var keyArrayMtch    = keyArryEgEx.exec (beautySrc);
+        console.log ("keyArrayMtch: ", keyArrayMtch);
+        if ( ! keyArrayMtch) {
+            reportError (
+                'Unexpected format. Require key array to be up top. EG:' +
+                '<pre>var _0xf17f = ["(", ")", "div", ...]</pre>'
+            );
+            return;
+        }
+        var keyVarName  = keyArrayMtch[1];
+        var keyArry;
+
+        //console.log (keyArrayMtch[2]);
+        try {
+            //JSON safer but string sometimes uses ' vs " and throws an exception.
+            //keyArry     = JSON.parse (keyArrayMtch[2]);
+            keyArry     = eval (keyArrayMtch[2]);
+        }
+        catch (err) {
+            reportError (
+                err.message + '\nReference:\n' +
+                '<pre>' + keyArrayMtch[2].replace (/[^\.\?^\w()\[\]+,;\"\'\\\/\s-]/g, "@") + '</pre>'
+            );
+            return;
+        }
+        if ( ! Array.isArray (keyArry) ) {
+            reportError (
+                'Not an array:' +
+                '<pre>' + keyArrayMtch[2].replace (/[^\.\?^\w()\[\]+,;\"\'\\\/\s-]/g, "@") + '</pre>'
+            );
+            return;
+        }
+        beautySrc       = beautySrc.slice (keyArryEgEx.lastIndex).trim ();
+
+        /*--- Replace all of the array terms.  Do function calls first, then plain variable references.
+            First pass:  document[_0xf17f[3]](...)  ==>  document.createElement(...)
+            Second pass: _0xf17f[5]                 ==> "Student_name"
+        */
+        var nameRegex   = new RegExp (keyVarName + '\\s*\\[\\s*(\\d+)\\s*\\]', 'g');
+        var funcRegex   = new RegExp ('\\[\\s*' + keyVarName + '\\s*\\[\\s*(\\d+)\\s*\\]\\s*\\]\\s*\\(', 'g');
+        //console.log ("funcRegex: ", funcRegex);
+
+        var replacedSrc = beautySrc.replace (funcRegex, function (matchStr, p1Str) {
+            return '.' + keyArry[ parseInt (p1Str, 10) ] + ' (';
+        } );
+
+        replacedSrc     = replacedSrc.replace (nameRegex, function (matchStr, p1Str) {
+            var quote = keyArry[parseInt (p1Str, 10)].indexOf('"')==-1? '"' : "'";
+            return quote + keyArry[ parseInt (p1Str, 10) ] + quote;
+        } );
+
+        $("#rezTxt").text (replacedSrc);
+    } );
+}
+
+function reportError (errHTML) {
+    $("#errDisplay").show ().html (errHTML);
+}
+</script>
+</body></html>
